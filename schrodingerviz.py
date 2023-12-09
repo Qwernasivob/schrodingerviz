@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.animation as animation
 import numpy as np
 import streamlit as st
@@ -36,6 +37,7 @@ states = {}
 max_n = 0  # Almacenará el valor máximo de n entre los estados activos
 with left_column:
     fps = st.slider("FPS", 1, 60, 30)
+    L = 1e-10  # Longitud de la "caja" en metros
     for i in range(1, 4):
         n_value = st.slider(f"Número cuántico n{i}", 1, 5, i)
         active = st.checkbox(f"Activar estado n{i}", True)
@@ -52,8 +54,7 @@ m = 9.10938356e-31  # Mass of the electron
 L = 1e-10  # Longitud de la "caja" en metros
 # Ajustar max_t y dt en función del valor máximo de n
 if max_n > 0:
-    # number of active states
-    max_t = 1e-15 / (max_n**2)
+    max_t = 1e-15 / (max_n**2) / 2
     dt = 5e-18 / (max_n**2) / 5
 else:
     max_t = 1e-15  # Valor por defecto si no hay estados activos
@@ -64,44 +65,74 @@ gif_path = 'wavefunction_animation.gif'
 
 # Condición para generar el GIF
 if st.session_state.running and not st.session_state.generated:
-    fig, ax = plt.subplots(2, figsize=(8, 6))
-    plt.subplots_adjust(hspace=0.6)
+    fig, axs = plt.subplots(3, 1, figsize=(6, 10), gridspec_kw={'height_ratios': [1, 2, 1]})
     x = np.linspace(0, L, 500)
     progress_bar = st.progress(0)
 
+    ax1, ax2, ax3 = axs
+
+    # El subplot ax2 (central) ya está configurado para ser el doble de alto que ax1 y ax3
+    # Configurar el subplot 3D con una vista isométrica
+    ax2.remove()
+    ax2 = fig.add_subplot(3, 1, 2, projection='3d')
+    ax2.get_proj = lambda: np.dot(Axes3D.get_proj(ax2), np.diag([1, 1, 0.5, 1]))
+
+    # Configuración inicial de los gráficos
     def init():
-        ax[0].set_title("Parte Real e Imaginaria de la Función de Onda")
-        ax[0].axhline(0, color='gray')
-        ax[0].set_ylim(-1.15, 1.15)
-        ax[0].set_xlim(0, L)  # Limitar el eje x a los valores máximos y mínimos
-        ax[0].set_xticklabels([])
-        ax[0].set_yticklabels([])
-        # get rid of ticks
-        ax[0].tick_params(axis='both', which='both', bottom=False, top=False,
-                          labelbottom=False, right=False, left=False, labelleft=False)
+        ax1.set_title("Parte Real e Imaginaria de la Función de Onda")
+        ax1.axhline(0, color='gray')
+        ax1.set_ylim(-1.15, 1.15)
+        ax1.set_xlim(0, L)
+        ax1.set_xticklabels([])
+        ax1.set_yticklabels([])
+        ax1.set_xticks([])
+        ax1.set_yticks([])
 
-        ax[1].set_title("Distribución de Probabilidad")
-        ax[1].axhline(0, color='gray')
-        ax[1].axvline(0, color='gray')
-        ax[1].set_ylim(-1.15, 1.15)
-        ax[1].set_xlim(0, L)
-        ax[1].set_xticklabels([])
-        ax[1].set_yticklabels([])
+        ax2.set_xlim([0, L])
+        ax2.set_ylim([-1.15, 1.15])
+        ax2.set_zlim([-1.15, 1.15])
+        ax2.view_init(elev=25, azim=300)
+        ax2.dist = 10000
+        ax2.set_xlabel('Posición')
+        ax2.set_ylabel('Imaginario')
+        ax2.set_zlabel('Real')
+        ax2.set_xticklabels([])
+        ax2.set_yticks([])
 
+        ax3.set_title("Distribución de Probabilidad")
+        ax3.axhline(0, color='gray')
+        ax3.set_ylim(-1.15, 1.15)
+        ax3.set_xlim(0, L)
+        ax3.set_xticklabels([])
+        ax3.set_yticklabels([])
+        ax3.set_xticks([])
+        ax3.set_yticks([])
+
+    # Función de animación
     def animate(t):
-        ax[0].clear()
-        ax[1].clear()
+        ax1.clear()
+        ax2.clear()
+        ax3.clear()
         init()
         psi_xt = wavefunction(states, L, x, t, hbar, m)
-        ax[0].plot(x, np.real(psi_xt), color='blue')
-        ax[0].plot(x, np.imag(psi_xt), color='red')
-        ax[1].plot(x, np.abs(psi_xt)**2, color='green')
+        ax1.plot(x, np.real(psi_xt), color='blue')  # Parte real en azul
+        ax1.plot(x, np.imag(psi_xt), color='red')  # Parte imaginaria en rojo
+        ax3.plot(x, np.abs(psi_xt)**2, color='green')  # Probabilidad
+
+        # Cambiar el orden de la parte real e imaginaria para la visualización 3D
+        ax2.plot(x, np.imag(psi_xt), np.real(psi_xt), color='blue')
+
+        # Dibujar el eje horizontal sobre el cual gira la onda (ahora será el eje imaginario)
+        ax2.plot(x, np.zeros_like(x), np.zeros_like(x), color='gray', linewidth=1)
+
         progress_bar.progress(t / max_t)
 
-    ani = animation.FuncAnimation(fig, animate, frames=np.arange(0, max_t, dt), init_func=init, blit=False)
+    ani = animation.FuncAnimation(fig, animate, frames=np.arange(0, max_t, dt), init_func=init, interval=50, blit=False)
+
+    plt.tight_layout()
 
     # Guardar la animación como GIF usando Pillow
-    ani.save(gif_path, writer='pillow', fps=fps, dpi=50)
+    ani.save(gif_path, writer='pillow', fps=fps, dpi=60)
     st.session_state.generated = True
     progress_bar.empty()
 
